@@ -24,6 +24,8 @@ cat > $payload <&0
 
 cd $source
 
+echo $VERSION
+
 insecure_registries=$(jq -r '.source.insecure_registries // [] | join(" ")' < $payload)
 
 registry_mirror=$(jq -r '.source.registry_mirror // ""' < $payload)
@@ -35,6 +37,13 @@ ca_certs=$(jq -r '.source.ca_certs // []' < $payload)
 client_certs=$(jq -r '.source.client_certs // []' < $payload)
 max_concurrent_downloads=$(jq -r '.source.max_concurrent_downloads // 3' < $payload)
 max_concurrent_uploads=$(jq -r '.source.max_concurrent_uploads // 3' < $payload)
+
+harbor_host=$(jq -r '.source.harbor_host // ""' < $payload)
+
+notary_enable=$(jq -r '.source.notary_enable // ""' < $payload)
+notary_url=$(jq -r '.source.notary_url // ""' < $payload)
+notary_vault_addr=$(jq -r '.source.notary_vault_addr // ""' < $payload)
+notary_vault_token=$(jq -r '.source.notary_vault_token // ""' < $payload)
 
 export AWS_ACCESS_KEY_ID=$(jq -r '.source.aws_access_key_id // ""' < $payload)
 export AWS_SECRET_ACCESS_KEY=$(jq -r '.source.aws_secret_access_key // ""' < $payload)
@@ -204,7 +213,7 @@ elif [ -n "$build" ]; then
       # see https://github.com/moby/moby/pull/32677
       # and https://github.com/awslabs/amazon-ecr-credential-helper/issues/9
       docker pull "${ecr_image}"
-    done    
+    done
   fi
 
   docker build -t "${repository}:${tag_name}" "${target[@]}" "${expanded_build_args[@]}" -f "$dockerfile" $cache_from "$build"
@@ -227,6 +236,35 @@ else
 fi
 
 image_id="$(image_from_tag "$repository" "$tag_name")"
+
+# Notary & Harbor support
+
+if [ $notary_enable = "true" ]; then
+
+    export DOCKER_CONTENT_TRUST=1
+    export DOCKER_CONTENT_TRUST_SERVER=$notary_url
+    export VAULT_ADDR=$notary_vault_addr
+    export VAULT_TOKEN=$notary_vault_token
+
+
+
+    vault kv get -format=json secret/$harbor_host | jq .data.data.ca_cert_base64 | tr -d '"' | base64 -d > /tmp/$harbor_host.crt
+    tr -d $'\r' < /tmp/$harbor_host.crt > /usr/local/share/ca-certificates/$harbor_host.crt && rm /tmp/$harbor_host.crt
+    update-ca-certificates 2>/dev/null || true
+
+    echo "Using vault kv get -format=json secret/$repository ..."
+
+    export notary_root_passphrase=$(vault kv get -format=json secret/$repository | jq .data.data.root_passphrase | tr -d '"')
+    export notary_target_passphrase=$(vault kv get -format=json secret/$repository | jq .data.data.target_passphrase | tr -d '"')
+    export notary_root_key_filename=$(vault kv get -format=json secret/$repository | jq .data.data.root_key_name | tr -d '"')
+    export notary_target_key_filename=$(vault kv get -format=json secret/$repository | jq .data.data.target_key_name | tr -d '"')
+    mkdir -p /root/.docker/trust/private
+    vault kv get -format=json secret/$repository | jq .data.data.root_key_base64 | tr -d '"' | base64 -d > /root/.docker/trust/private/$notary_root_key_filename
+    vault kv get -format=json secret/$repository | jq .data.data.target_key_base64 | tr -d '"' | base64 -d > /root/.docker/trust/private/$notary_target_key_filename
+    export DOCKER_CONTENT_TRUST_ROOT_PASSPHRASE="$notary_root_passphrase"
+    export DOCKER_CONTENT_TRUST_REPOSITORY_PASSPHRASE="$notary_target_passphrase"
+
+fi
 
 # afaict there's no clean way to get the digest after a push. docker prints
 # this line at the end at least:

@@ -1,8 +1,7 @@
-# Docker Image Resource
+# Harbor Image Resource
 
-Tracks and builds [Docker](https://docker.io) images.
+Tracks and builds [Docker](https://docker.io) images as well as adding key capabilities provided by Harbor.
 
-Note: docker registry must be [v2](https://docs.docker.com/registry/spec/api/).
 
 ## Source Configuration
 
@@ -94,6 +93,10 @@ Note: docker registry must be [v2](https://docs.docker.com/registry/spec/api/).
  * `max_concurrent_uploads`: *Optional.* Maximum concurrent uploads.
 
    Limits the number of concurrent upload threads.
+   
+   `harbor_host`:  *Required.* The DNS host name or IP address that will be used to connect to your Harbor instance.  Typically matches the SAN or CN in the SSL certificate used by harbor.  example: harbor.mg.lab
+   
+   `notary_enable`: *Optional.* Default is false, setting to true will attempt to 
 
 ## Behavior
 

@@ -15,6 +15,8 @@ if [ -z "$destination" ]; then
   exit 1
 fi
 
+echo $VERSION
+
 # for jq
 PATH=/usr/local/bin:$PATH
 
@@ -35,6 +37,11 @@ client_certs=$(jq -r '.source.client_certs // []' < $payload)
 max_concurrent_downloads=$(jq -r '.source.max_concurrent_downloads // 3' < $payload)
 max_concurrent_uploads=$(jq -r '.source.max_concurrent_uploads // 3' < $payload)
 
+# Harbor Add to prep for Clair Scan & prevent Image PUll as part of output
+skip_pull=$(jq -r '.source.skip_pull // ""' < $payload)
+
+max_concurrent_uploads=$(jq -r '.source.max_concurrent_uploads // 3' < $payload)
+
 export AWS_ACCESS_KEY_ID=$(jq -r '.source.aws_access_key_id // ""' < $payload)
 export AWS_SECRET_ACCESS_KEY=$(jq -r '.source.aws_secret_access_key // ""' < $payload)
 export AWS_SESSION_TOKEN=$(jq -r '.source.aws_session_token // ""' < $payload)
@@ -48,7 +55,14 @@ fi
 digest="$(jq -r '.version.digest' < $payload)"
 
 rootfs="$(jq -r '.params.rootfs // false' < $payload)"
-skip_download="$(jq -r '.params.skip_download // false' < $payload)"
+
+if [ $skip_pull = "true" ]; then
+    echo "Skipping Image Pull Verification After Build ..."
+    skip_download="true"
+else
+    skip_download="$(jq -r '.params.skip_download // false' < $payload)"
+fi
+
 save="$(jq -r '.params.save // false' < $payload)"
 
 certs_to_file "$ca_certs"
