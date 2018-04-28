@@ -5,6 +5,8 @@ Tracks and builds [Docker](https://docker.io) images as well as adding key capab
 
 ## Source Configuration
 
+**Docker Images Resource Config:**
+
 * `repository`: *Required.* The name of the repository, e.g.
 `concourse/docker-image-resource`.
 
@@ -93,10 +95,76 @@ Tracks and builds [Docker](https://docker.io) images as well as adding key capab
  * `max_concurrent_uploads`: *Optional.* Maximum concurrent uploads.
 
    Limits the number of concurrent upload threads.
+
+**Harbor Extensions Resource Config:**
+
+Harbor extensions to the core docker-image resource type.
+
+=
+     Harbor
    
-   `harbor_host`:  *Required.* The DNS host name or IP address that will be used to connect to your Harbor instance.  Typically matches the SAN or CN in the SSL certificate used by harbor.  example: harbor.mg.lab
+`harbor_host`:  *Required.* The DNS host name or IP address that will be used to connect to your Harbor instance.  Typically matches the SAN or CN in the SSL certificate used by Harbor.  
+    
+   - example: *harbor.my.domain*.
    
-   `notary_enable`: *Optional.* Default is false, setting to true will attempt to 
+`harbor_image`: *Required.*  The registry path including *[project]/[image_name]* in Harbor.  The credentials passed must belong to a user with rights to create & update images in the Harbor Project used here.   This is the target location for images being built.  
+   
+   - example: *library/my-image*.
+
+=
+     Clair
+    
+`harbor_trigger_scan`:  *Optional.*  Enables clair scanning after push of the Docker image.  Accepts [*true* | *false*].   Default is false (no scan)
+   
+`harbor_scan_thresholds`: *Optional.*  Required if  *harbor_**trigger_scan* is set to true.   Json array of acceptable thresholds.  Array must contain at least 1 threshold.  The format must be severity (CVE Sev Level 1-5) & count (integer) for each desired threshold element in the array.
+      
+   - *example*:  [{"severity": 1,"count": 20},{"severity": 5,"count": 1}].
+
+If the scan finds a count of any given matching CVE Sev level higher than the given threshold,  the job will fail and report the complete CVE findings. 
+
+=
+
+     Notary
+   
+`notary_enable`: *Optional.* Accepts [*true* | *false*]. Default is false, setting to true will attempt to retrieve Notary root & target keys from a Hashicorp vault instance to sign newly pushed images.
+
+`notary_url`: *Optional.* Required if *notary_enable* is set to true.  The url for the Notary API endpoint on your Harbor instance.  It is typically the FQDN of your Harbor instance at port 4443.  
+   
+   - example: *https://harbor.my.domain:4443*
+   
+`notary_vault_addr`: *Optional.* Required if *notary_enable* is set to true.  The Hashicorp vault instance IP address or FQDN.   This sets the VAULT_ADDR variable for the job to pull notary keys.  
+
+   - example: *http://192.168.1.7:8200*
+
+`notary_vault_token`: *Optional.* Required if *notary_enable* is set to true.   This is the token that has that can be used to login to Hashicorp Vault and read the required Notary root & target keys.   
+
+   - example: *abcd0123-4567-890a-bcd0-123456789abc*
+   
+**Note**: At this time,  the Notary integration in this resource type requires that the Notary keys be created externally from the pipeline and imported into Hashicorp vault manually.   The keys should also be registered to the Notary server metadata on Harbor.   This can easily be done by simply issuing a docker push with the following variables set:
+   
+   - export *DOCKER_**CONTENT_TRUST=1*
+   - export *DOCKER_**CONTENT_TRUST**_SERVER=https://harbor.my.domain:4443*
+
+Once the Image has been signed an pushed to Harbor on a donor instance, the following data should be injected into Hashicorp Vault,  make note of the path:
+
+```
+vault kv put secret/harbor.my.domain/my-catalog/my-image \
+root_key_base64="*[base64 encode of root key]*" \
+target_key_base64="*[base64 encode of root key]*" \
+root_key_name="*[filename of root key in /home/.docker/trust/private of donor instance]*" \
+target_key_name="*[filename of target key in /home/.docker/trust/private of donor instance]*" \
+root_passphrase="*[your-root-passphrase]*" \
+target_passphrase="*[your-target-passphrase]*"
+```
+
+Additionally,  the cert of the CA that signed the Harbor SSL cert should also be added to vault:
+
+```
+vault kv put secret/harbor.mg.lab ca_cert_base64="*[base64 encode of ca cert]*" 
+```
+
+
+*Roadmap Item*:  The capability to auto create the required Notary keys when a new Notary target is being created is coming soon.
 
 ## Behavior
 
