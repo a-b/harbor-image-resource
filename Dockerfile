@@ -16,7 +16,7 @@ ENV CGO_ENABLED 1
 
 FROM alpine:edge AS resource
 
-RUN apk --no-cache add bash docker jq ca-certificates
+RUN apk --no-cache add bash docker jq ca-certificates curl
 COPY --from=builder /assets /opt/resource
 COPY --from=builder /usr/local/bin/vault /usr/local/bin/vault
 RUN mv /opt/resource/ecr-login /usr/local/bin/docker-credential-ecr-login

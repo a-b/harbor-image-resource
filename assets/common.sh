@@ -1,7 +1,7 @@
 LOG_FILE=${LOG_FILE:-/tmp/docker.log}
 SKIP_PRIVILEGED=${SKIP_PRIVILEGED:-false}
 
-VERSION="Using Harbor Docker Concourse Image v 0.1-build-04160822"
+VERSION="Using Harbor Docker Concourse Image v 0.0.1-build-04271930"
 
 sanitize_cgroups() {
   mkdir -p /sys/fs/cgroup

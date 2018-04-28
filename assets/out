@@ -39,6 +39,9 @@ max_concurrent_downloads=$(jq -r '.source.max_concurrent_downloads // 3' < $payl
 max_concurrent_uploads=$(jq -r '.source.max_concurrent_uploads // 3' < $payload)
 
 harbor_host=$(jq -r '.source.harbor_host // ""' < $payload)
+harbor_image=$(jq -r '.source.harbor_image // ""' < $payload)
+harbor_trigger_scan=$(jq -r '.source.harbor_trigger_scan // ""' < $payload)
+harbor_scan_thresholds=$(jq -r '.source.harbor_scan_thresholds // ""' < $payload)
 
 notary_enable=$(jq -r '.source.notary_enable // ""' < $payload)
 notary_url=$(jq -r '.source.notary_url // ""' < $payload)
@@ -299,6 +302,108 @@ if [ -n "$additional_tag_names" ]    ; then
     docker push "${repository}:${additional_tag}"
     echo "${repository}:${tag_name} tagged as ${additional_tag}"
   done
+fi
+
+#Trigger Clair Scan
+
+if [[ "$harbor_trigger_scan" = "true" ]]; then
+
+      urlencode() {
+            local _length="${#1}"
+            for (( _offset = 0 ; _offset < _length ; _offset++ )); do
+                _print_offset="${1:_offset:1}"
+                case "${_print_offset}" in
+                    [a-zA-Z0-9.~_-]) printf "${_print_offset}" ;;
+                    ' ') printf + ;;
+                    *) printf '%%%X' "'${_print_offset}" ;;
+                esac
+            done
+        }
+
+    export lcl_harbor_respoitory_encoded=$(urlencode $harbor_image)
+    export lcl_scan_check_tries=10
+    export lcl_scan_check_interval=5
+
+    harbor_curl_scan() {
+    	response=$(curl -sk --write-out "%{http_code}\n" --output /dev/null -H "Content-Type: application/json" -X POST --user $username:$password "https://$harbor_host/api/repositories/$lcl_harbor_respoitory_encoded/tags/latest/scan" )
+    	if [ $response != "200" ]; then
+    		echo "Failed to initiate Harbor Scan on https://$harbor_host/api/repositories/$lcl_harbor_respoitory_encoded/tags/latest !!!"
+    		exit 1
+    	else
+    		echo "Scan Initiated on https://$harbor_host/api/repositories/$lcl_harbor_respoitory_encoded/tags/latest ..."
+    	fi
+    }
+
+    harbor_curl_scan_check() {
+    	response=$(curl -sk -H "Content-Type: application/json" -X GET --user $username:$password "https://$harbor_host/api/repositories/$lcl_harbor_respoitory_encoded/tags/latest" | jq .scan_overview.scan_status | tr -d "\"")
+    	echo $response
+    }
+
+    harbor_curl_scan_summary() {
+    	response=$(curl -sk -H "Content-Type: application/json" -X GET --user $username:$password "https://$harbor_host/api/repositories/$lcl_harbor_respoitory_encoded/tags/latest" | jq .scan_overview.components)
+            echo $response
+    }
+
+    harbor_curl_scan_details() {
+            response=$(curl -sk -H "Content-Type: application/json" -X GET --user $username:$password "https://$harbor_host/api/repositories/$lcl_harbor_respoitory_encoded/tags/latest/vulnerability/details" | jq .)
+            echo $response
+    }
+
+  	echo "Triggering Image scan..."
+  	harbor_curl_scan
+
+
+    # Check if Scan is complete or if it hasnt been triggered.
+
+    for i in $(seq 1 $lcl_scan_check_tries);
+  	  do
+  		  lcl_scan_state=$(harbor_curl_scan_check)
+        		echo "Checking if Clair Scan is finsihed, attempt $i of $lcl_scan_check_tries ... RESULT: $lcl_scan_state"
+  	  	if [ $lcl_scan_state = "finished" ]; then
+  	  		echo "Clair Scan Complete"
+    			break
+  	  	else
+  	  		sleep $lcl_scan_check_interval
+    		fi
+    	done
+
+
+    # Checkpipeline thresholds & print Summary Report
+    echo "Harbor Summary Report of CVE's found:"
+    lcl_harbor_curl_scan_summary=$(harbor_curl_scan_summary)
+
+    echo $lcl_harbor_curl_scan_summary | jq .
+
+    # Check Tresholds Json & Trigger if summary CVEs exceed
+    lcl_threshold_trigger=false
+
+    for row in $(echo "${harbor_scan_thresholds}" | jq -r '.[] | @base64'); do
+        _jq() {
+         echo ${row} | base64 -d | jq -r ${1}
+        }
+
+       lcl_cve_sev=$(_jq '.severity')
+       lcl_cve_threshold=$(_jq '.count')
+
+    	get_count_cmd="echo '$lcl_harbor_curl_scan_summary' | jq ' .summary[] | select(.severity == $lcl_cve_sev) | .count'"
+    	lcl_count=$(eval $get_count_cmd)
+    	if [ ! -z $lcl_count ] && [ $lcl_count -gt $lcl_cve_threshold ]; then
+    		echo "Image exceed threshold of $lcl_cve_threshold for CVE-Severity:$lcl_cve_sev with a count of $lcl_count"
+    		lcl_threshold_trigger=true
+    	fi
+    done
+
+    if [ $lcl_threshold_trigger = true ]; then
+    	echo "One or more Clair Scan Thresholds have been exceeded !!!"
+    	echo "Collecting CVE Scan Details from Harbor ..."
+    	echo "==========================================================================="
+    	echo "DETAILED CVE ANALYSIS:"
+    	echo "==========================================================================="
+
+    	harbor_curl_scan_details | jq .
+    	exit 1
+    fi
+
 fi
 
 jq -n "{
