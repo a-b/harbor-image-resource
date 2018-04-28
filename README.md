@@ -100,8 +100,7 @@ Tracks and builds [Docker](https://docker.io) images as well as adding key capab
 
 Harbor extensions to the core docker-image resource type.
 
-=
-     Harbor
+###### Harbor
    
 `harbor_host`:  *Required.* The DNS host name or IP address that will be used to connect to your Harbor instance.  Typically matches the SAN or CN in the SSL certificate used by Harbor.  
     
@@ -111,8 +110,7 @@ Harbor extensions to the core docker-image resource type.
    
    - example: *library/my-image*.
 
-=
-     Clair
+###### Clair
     
 `harbor_trigger_scan`:  *Optional.*  Enables clair scanning after push of the Docker image.  Accepts [*true* | *false*].   Default is false (no scan)
    
@@ -122,9 +120,7 @@ Harbor extensions to the core docker-image resource type.
 
 If the scan finds a count of any given matching CVE Sev level higher than the given threshold,  the job will fail and report the complete CVE findings. 
 
-=
-
-     Notary
+###### Notary
    
 `notary_enable`: *Optional.* Accepts [*true* | *false*]. Default is false, setting to true will attempt to retrieve Notary root & target keys from a Hashicorp vault instance to sign newly pushed images.
 
@@ -142,8 +138,8 @@ If the scan finds a count of any given matching CVE Sev level higher than the gi
    
 **Note**: At this time,  the Notary integration in this resource type requires that the Notary keys be created externally from the pipeline and imported into Hashicorp vault manually.   The keys should also be registered to the Notary server metadata on Harbor.   This can easily be done by simply issuing a docker push with the following variables set:
    
-   - export *DOCKER_**CONTENT_TRUST=1*
-   - export *DOCKER_**CONTENT_TRUST**_SERVER=https://harbor.my.domain:4443*
+   - export _DOCKER_CONTENT_TRUST_=1
+   - export _DOCKER_CONTENT_TRUST_SERVER_=https://harbor.my.domain:4443
 
 Once the Image has been signed an pushed to Harbor on a donor instance, the following data should be injected into Hashicorp Vault,  make note of the path:
 
