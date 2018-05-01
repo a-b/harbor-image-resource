@@ -110,6 +110,9 @@ Harbor extensions to the core docker-image resource type.
    
    - example: *library/my-image*.
 
+`skip_pull`: *Required.*  Use when Harbor is set to prevent pulls on non scanned images.   This allows the resource to poll until the scan is complete.  Accepts [*true* | *false*].   Default is false (pull image)
+
+
 ###### Clair
     
 `harbor_trigger_scan`:  *Optional.*  Enables clair scanning after push of the Docker image.  Accepts [*true* | *false*].   Default is false (no scan)
